@@ -1,5 +1,9 @@
 """Organizer user interface. Usage: python gui.py ["YYYY-MM-DD HH:MM"]
-The optional date fixes "now" (useful to repeat the scenarios in the report)."""
+The optional date fixes "now" (useful to repeat the scenarios in the report).
+
+Agent loop: the input tabs are the agent's sensors; every change calls App.changed(),
+which saves the data and re-plans with agent.plan() (utility-based agent + A* search).
+The Schedule and "How the plan was made" tabs are its actuators: they show the plan and why."""
 import os
 import sys
 import tkinter as tk
@@ -27,17 +31,30 @@ def text_to_days(text):
 
 
 def check_time(text):
-    dm.hour(text)  # raises ValueError if it is not HH:MM
-    return text
+    try:
+        h, m = map(int, text.split(":"))
+    except ValueError:
+        raise ValueError(f"'{text}' is not a time. Use HH:MM, for example 09:00") from None
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        raise ValueError(f"'{text}' is not a valid time (00:00 to 23:59).")
+    return f"{h:02d}:{m:02d}"
+
+
+def number(text, what):
+    try:
+        return float(text)
+    except ValueError:
+        raise ValueError(f"{what} must be a number.") from None
 
 
 class Section(ttk.LabelFrame):
     """Table + form to add, edit (select and Save) or delete rows."""
 
-    def __init__(self, parent, title, fields, rows, create, delete, on_change):
+    def __init__(self, parent, title, fields, rows, create, delete, on_change, extra=()):
+        """extra: read-only columns the program computes (shown after the fields)."""
         super().__init__(parent, text=title, padding=6)
         self.rows, self.create, self.delete, self.on_change = rows, create, delete, on_change
-        names = [f[0] for f in fields]
+        names = [f[0] for f in fields] + list(extra)
         self.table = ttk.Treeview(self, columns=names, show="headings", height=7)
         for n in names:
             self.table.heading(n, text=n)
@@ -102,11 +119,10 @@ def replace(items, index, new):
 class App(tk.Tk):
     def __init__(self, now=None):
         super().__init__()
-        self.title("School organizer: A* vs utility-based agent")
+        self.title("School organizer: utility-based agent + A* search")
         self.geometry("1180x800")
         self.d = dm.load(PATH)
         self.now = tk.StringVar(value=(now or datetime.now()).strftime(dm.FMT))
-        self.mode = tk.StringVar(value="astar")
         self.nb = ttk.Notebook(self)
         self.nb.pack(fill="both", expand=True)
         self.sections = []
@@ -129,19 +145,43 @@ class App(tk.Tk):
         def create_subject(v, i):
             if not v[0]:
                 raise ValueError("The subject needs a name.")
-            replace(d.subjects, i, dm.Subject(v[0], float(v[1])))
+            if v[0] in self._subject_names() and (i is None or d.subjects[i].name != v[0]):
+                raise ValueError("That subject already exists.")
+            hours = number(v[1], "Weekly hours")
+            if hours <= 0:
+                raise ValueError("Weekly hours must be more than 0.")
+            if i is not None and d.subjects[i].name != v[0]:  # renamed: keep its classes and tasks
+                for x in d.classes + d.tasks:
+                    if x.subject == d.subjects[i].name:
+                        x.subject = v[0]
+            replace(d.subjects, i, dm.Subject(v[0], hours))
+
+        def delete_subject(i):  # its classes and tasks go with it
+            name = d.subjects.pop(i).name
+            d.classes[:] = [c for c in d.classes if c.subject != name]
+            d.tasks[:] = [t for t in d.tasks if t.subject != name]
 
         def create_class(v, i):
             if v[0] not in self._subject_names():
                 raise ValueError("Add the subject above first.")
-            replace(d.classes, i, dm.ClassSession(v[0], dm.DAYS.index(v[1]), check_time(v[2]), check_time(v[3])))
+            if v[1] not in dm.DAYS:
+                raise ValueError("Pick the day from the list.")
+            start, end = check_time(v[2]), check_time(v[3])
+            if end <= start:
+                raise ValueError("A class must end after it starts, on the same day.")
+            replace(d.classes, i, dm.ClassSession(v[0], dm.DAYS.index(v[1]), start, end))
 
-        ttk.Label(tab, text="Weekly hours = all the time you want to spend on it (class + outside class). "
-                            "Example: Mathematics 10 h = 6 h of class + 4 h of homework.").pack(anchor="w")
+        ttk.Label(tab, justify="left", text=(
+            "Weekly hours = all the time for the subject (class + outside class). Example: Mathematics 10 h "
+            "with 3 classes of 2 h = 6 h of class + a study goal of 4 h.\n"
+            "Tasks and projects of a subject use its study goal first: a 6 h Mathematics project takes "
+            "those 4 h plus 2 h extra, not 4 + 6.")).pack(anchor="w")
         subjects = Section(
             tab, "Subjects", [("Subject", None), ("Weekly hours", None)],
-            lambda: [(s.name, s.weekly_hours) for s in d.subjects],
-            create_subject, lambda i: d.subjects.pop(i), self.changed)
+            lambda: [(s.name, s.weekly_hours, b["class"], b["goal"])
+                     for s, b in ((s, dm.hour_budget(d)[s.name]) for s in d.subjects)],
+            create_subject, delete_subject, self.changed,
+            extra=("Class hours (from the classes below)", "Study goal = weekly - class"))
         classes = Section(
             tab, "Classes (one row per session)",
             [("Subject", self._subject_names()), ("Day", dm.DAYS), ("Start (HH:MM)", None), ("End (HH:MM)", None)],
@@ -160,7 +200,10 @@ class App(tk.Tk):
         def create(v, i):
             if not v[0]:
                 raise ValueError("Write the activity.")
-            replace(d.rules, i, dm.Rule(v[0], text_to_days(v[1]), check_time(v[2]), check_time(v[3])))
+            start, end = check_time(v[2]), check_time(v[3])
+            if start == end:
+                raise ValueError("Start and end are the same time.")
+            replace(d.rules, i, dm.Rule(v[0], text_to_days(v[1]), start, end))
 
         ttk.Label(tab, text="Days as letters: M T W R F S U (R = Thursday, U = Sunday). "
                             "If the end is before the start, it crosses midnight (sleep 23:00 to 07:00).").pack(anchor="w")
@@ -180,8 +223,15 @@ class App(tk.Tk):
         def create(v, i):
             if not v[0] or v[1] not in self._subject_names():
                 raise ValueError("The task needs a name and an existing subject.")
-            t = dm.Task(v[0], v[1], v[2], int(v[3]), float(v[4]), float(v[5] or 0.5))
-            t.due_dt  # checks the date
+            try:
+                hours = int(v[3])
+            except ValueError:
+                raise ValueError("Estimated hours must be a whole number.") from None
+            t = dm.Task(v[0], v[1], v[2], hours, number(v[4], "Weight"), number(v[5] or 0.5, "Difficulty"))
+            try:
+                t.due_dt
+            except ValueError:
+                raise ValueError("Write the due date as YYYY-MM-DD HH:MM") from None
             if t.hours <= 0 or not 0 <= t.weight <= 1 or not 0 <= t.difficulty <= 1:
                 raise ValueError("Hours > 0; weight and difficulty between 0 and 1.")
             replace(d.tasks, i, t)
@@ -203,9 +253,6 @@ class App(tk.Tk):
         bar.pack(fill="x")
         ttk.Label(bar, text="Plan from:").pack(side="left")
         ttk.Entry(bar, textvariable=self.now, width=17).pack(side="left", padx=4)
-        ttk.Label(bar, text="  Show:").pack(side="left")
-        for text, value in (("A*", "astar"), ("Utility-based agent", "utility")):
-            ttk.Radiobutton(bar, text=text, value=value, variable=self.mode, command=self.replan).pack(side="left")
         ttk.Button(bar, text="Build schedule", command=self.replan).pack(side="left", padx=8)
         ttk.Button(bar, text="Something came up", command=self.add_event).pack(side="right")
         self.stats = ttk.Label(tab, font=("TkDefaultFont", 10, "bold"))
@@ -245,47 +292,61 @@ class App(tk.Tk):
                 c.create_text(x + 4, y + height / 2, text=label[:24], anchor="w", font=("TkDefaultFont", 8))
         c.configure(scrollregion=c.bbox("all"))
 
-    # ---------- summary ----------
+    # ---------- how the plan was made ----------
     def _tab_summary(self):
         tab = ttk.Frame(self.nb, padding=8)
-        self.nb.add(tab, text="5. Summary and comparison")
+        self.nb.add(tab, text="5. How the plan was made")
 
-        def table(title, cols, height):
+        def table(title, cols, widths):
             ttk.Label(tab, text=title, font=("TkDefaultFont", 10, "bold")).pack(anchor="w", pady=(8, 0))
-            t = ttk.Treeview(tab, columns=cols, show="headings", height=height)
-            for col in cols:
+            t = ttk.Treeview(tab, columns=cols, show="headings", height=7)
+            for col, w in zip(cols, widths):
                 t.heading(col, text=col)
-                t.column(col, width=150, anchor="w")
+                t.column(col, width=w, anchor="w")
             t.pack(fill="x")
             return t
 
-        self.t_priority = table("What should I do first? (utility-based agent, seen from now)",
-                                ("Task", "Subject", "Due", "Hours", "U", "Urgency"), 7)
-        self.t_priority.tag_configure("risk", foreground="red")
-        self.t_compare = table("When each task finishes with each agent",
-                               ("Task", "Due", "Finishes with A*", "Late hours A*",
-                                "Finishes with utility", "Late hours utility"), 7)
-        self.t_subjects = table("Hours per subject in the plan shown",
-                                ("Subject", "Weekly goal", "Class", "Planned outside class", "Missing"), 7)
+        ttk.Label(tab, justify="left", wraplength=1150, text=(
+            "Step 1. The utility-based agent rates each task: U = 0.4 weight + 0.5 urgency + 0.1 difficulty "
+            "(urgency = hours / free hours before the due date).\n"
+            "Step 2. A* searches the order of tasks with the lowest cost, where "
+            "cost = U x (hour it finishes + 10 x late hours). High-U tasks want to go early, "
+            "but A* only moves them ahead if no other deadline is missed.\n"
+            "Step 3. The free hours left become study time, after tasks use up each subject's study goal.")
+        ).pack(anchor="w")
+        self.t_utility = table("Step 1 · Utility-based agent: what each task is worth (highest U first)",
+                               ("Task", "Subject", "Due", "Hours", "Weight", "Urgency", "Difficulty", "U"),
+                               (180, 160, 130, 60, 70, 80, 80, 70))
+        self.t_utility.tag_configure("risk", foreground="red")
+        self.t_order = table("Step 2 · A* search: the order chosen and when each task is done",
+                             ("Order", "Task", "U", "Starts", "Finishes", "Due", "Late hours", "Cost"),
+                             (60, 180, 60, 130, 130, 130, 80, 70))
+        self.t_order.tag_configure("late", foreground="red")
+        self.t_subjects = table("Step 3 · Hours per subject: tasks first use the study goal, then extra hours",
+                                ("Subject", "Weekly total", "Class", "Study goal", "Tasks/projects",
+                                 "Study (topics)", "Extra hours", "Study placed"),
+                                (170, 90, 60, 80, 100, 100, 90, 100))
 
-    def _fill_summary(self, plans, blocks):
-        for t in (self.t_priority, self.t_compare, self.t_subjects):
+    def _fill_summary(self):
+        for t in (self.t_utility, self.t_order, self.t_subjects):
             t.delete(*t.get_children())
-        for t, u, urg in agent.prioritize(self.d.tasks, blocks):
-            self.t_priority.insert("", "end", tags=("risk",) if urg > 1 else (), values=(
+        p = self.plan
+        when = lambda x: f"{dm.DAYS[x.weekday()][:3]} {x:%d %H:%M}" if x else "does not fit"
+        u_of = {}
+        for t, u, urg in p.utilities:
+            u_of[t.name] = u
+            self.t_utility.insert("", "end", tags=("risk",) if urg > 1 else (), values=(
                 t.name + ("  (not enough time)" if urg > 1 else ""), t.subject, t.due, t.hours,
-                f"{u:.2f}", f"{urg:.2f}"))
-        a, u = plans["astar"], plans["utility"]
-        when = lambda x: f"{dm.DAYS[x.weekday()][:3]} {x:%d %H:%M}" if x else "does not fit this week"
-        for t in sorted(self.d.tasks, key=lambda t: t.due):
-            self.t_compare.insert("", "end", values=(
-                t.name, t.due, when(a.finishes.get(t.name)), a.late_hours.get(t.name, 0),
-                when(u.finishes.get(t.name)), u.late_hours.get(t.name, 0)))
-        for s in self.d.subjects:
-            in_class = dm.class_hours(self.d, s.name)
-            outside = self.plan.study.get(s.name, 0)
+                t.weight, f"{urg:.2f}", t.difficulty, f"{u:.3f}"))
+        for k, t in enumerate(p.order, 1):
+            late = p.late_hours[t.name]
+            self.t_order.insert("", "end", tags=("late",) if late else (), values=(
+                k, t.name, f"{u_of[t.name]:.3f}", when(p.starts[t.name]), when(p.finishes[t.name]),
+                t.due, late, f"{p.costs[t.name]:.2f}"))
+        for s, row in p.budget.items():
             self.t_subjects.insert("", "end", values=(
-                s.name, s.weekly_hours, in_class, outside, max(0, s.weekly_hours - in_class - outside)))
+                s, row["total"], row["class"], row["goal"], row["tasks"], row["study"], row["extra"],
+                row["planned"]))
 
     # ---------- agent loop ----------
     def changed(self):
@@ -303,19 +364,20 @@ class App(tk.Tk):
             messagebox.showerror("Invalid date", "Use the format YYYY-MM-DD HH:MM")
             return
         blocks = dm.free_blocks(self.d, since)
-        plans = {m: agent.plan(self.d, blocks, m) for m in ("astar", "utility")}
-        self.plan = plans[self.mode.get()]
-        a, u = plans["astar"], plans["utility"]
+        self.plan = p = agent.plan(self.d, blocks)
+        search = (f"A* expanded {p.nodes} of {p.states} states" if p.searched else
+                  f"more than {agent.MAX_ASTAR_TASKS} tasks: order by utility only")
         self.stats.config(text=(
-            f"Cost  A*: {a.cost:.2f}  ({sum(a.late_hours.values())} h late, {a.nodes} nodes, {a.ms:.1f} ms)"
-            f"     |     Utility-based agent: {u.cost:.2f}  ({sum(u.late_hours.values())} h late, "
-            f"{u.nodes} decisions, {u.ms:.1f} ms)     |     {len(blocks)} free hours in 7 days"))
-        needed = sum(t.hours for t in self.d.tasks) + sum(
-            max(0, s.weekly_hours - dm.class_hours(self.d, s.name)) for s in self.d.subjects)
-        self.warning.config(text="" if needed <= len(blocks) else
-                            f"Warning: you need {needed:.0f} h outside class but only have {len(blocks)} free hours.")
+            f"{len(p.order)} tasks  |  {sum(p.late_hours.values())} h late  |  cost {p.cost:.2f}  |  "
+            f"{search} in {p.ms:.1f} ms  |  {len(blocks)} free hours in 7 days"))
+        # Outside class you need max(study goal, task hours) per subject (data.hour_budget).
+        needed = sum(max(r["goal"], r["tasks"]) for r in dm.hour_budget(self.d).values())
+        notes = dm.overlaps(self.d)
+        if needed > len(blocks):
+            notes.insert(0, f"You need {needed:.0f} h outside class but only have {len(blocks)} free hours.")
+        self.warning.config(text="Warning: " + "  ·  ".join(notes[:3]) if notes else "")
         self._draw(since, dm.busy_blocks(self.d, since))
-        self._fill_summary(plans, blocks)
+        self._fill_summary()
 
     def add_event(self):
         text = simpledialog.askstring(

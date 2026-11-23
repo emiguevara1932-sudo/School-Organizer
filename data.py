@@ -96,6 +96,52 @@ def class_hours(data, subject):
     return sum(len(covered_hours(c.start, c.end)) for c in data.classes if c.subject == subject)
 
 
+def hour_budget(data):
+    """Hours outside class per subject, with the rule "tasks replace study hours".
+
+    study goal = weekly hours - class hours            (Mathematics: 10 - 6 = 4 h)
+    If the subject has tasks or projects, their hours use the study goal first:
+        study (topics) = max(0, goal - task hours)     (project 6 h -> 0 h of plain study)
+        extra          = max(0, task hours - goal)     (project 6 h -> 2 h extra this week)
+    So outside class you spend max(goal, task hours), never goal + task hours.
+    """
+    out = {}
+    for s in data.subjects:
+        in_class = class_hours(data, s.name)
+        goal = max(0, s.weekly_hours - in_class)
+        tasks = sum(t.hours for t in data.tasks if t.subject == s.name)
+        out[s.name] = {"total": s.weekly_hours, "class": in_class, "goal": goal, "tasks": tasks,
+                       "study": max(0, goal - tasks), "extra": max(0, tasks - goal)}
+    return out
+
+
+def overlaps(data):
+    """Checks the class timetable against the fixed rules (sleep, meals, commute...).
+
+    Returns readable warnings such as "Class Mathematics (Monday 08:00) overlaps Commute",
+    and the same for two classes at the same time.
+    The program still works (classes win), but the student probably typed something wrong."""
+    def week_hours(day, start, end):  # (weekday, hour) pairs, wrapping Sunday -> Monday
+        return {((day + extra) % 7, h) for extra, h in covered_hours(start, end)}
+
+    rules = {}
+    for r in data.rules:
+        for d in r.days:
+            for slot in week_hours(d, r.start, r.end):
+                rules.setdefault(slot, r.activity)
+    out, taken = [], {}  # taken: (weekday, hour) -> index of the class there
+    for i, c in enumerate(data.classes):
+        hit_rule = hit_class = None
+        for d, h in sorted(week_hours(c.day, c.start, c.end)):
+            if (d, h) in rules and not hit_rule:
+                hit_rule = f"Class {c.subject} ({DAYS[d]} {h:02d}:00) overlaps {rules[(d, h)]}"
+            j = taken.setdefault((d, h), i)
+            if j != i and not hit_class:
+                hit_class = f"Class {c.subject} ({DAYS[d]} {h:02d}:00) overlaps class {data.classes[j].subject}"
+        out += [x for x in (hit_rule, hit_class) if x]
+    return out
+
+
 def busy_blocks(data, since, days=7):
     """Fixed blocks of the week: {block_start: (label, kind)}. Classes win over rules."""
     base = since.replace(hour=0, minute=0, second=0, microsecond=0)
