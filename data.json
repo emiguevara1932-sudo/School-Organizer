@@ -1,0 +1,236 @@
+{
+  "subjects": [
+    {
+      "name": "Mathematics",
+      "weekly_hours": 10
+    },
+    {
+      "name": "Electric Circuits",
+      "weekly_hours": 9
+    },
+    {
+      "name": "Programming",
+      "weekly_hours": 8
+    },
+    {
+      "name": "Artificial Intelligence",
+      "weekly_hours": 8
+    },
+    {
+      "name": "Probability",
+      "weekly_hours": 6
+    }
+  ],
+  "classes": [
+    {
+      "subject": "Mathematics",
+      "day": 0,
+      "start": "09:00",
+      "end": "11:00"
+    },
+    {
+      "subject": "Mathematics",
+      "day": 2,
+      "start": "09:00",
+      "end": "11:00"
+    },
+    {
+      "subject": "Mathematics",
+      "day": 4,
+      "start": "09:00",
+      "end": "11:00"
+    },
+    {
+      "subject": "Electric Circuits",
+      "day": 1,
+      "start": "09:00",
+      "end": "12:00"
+    },
+    {
+      "subject": "Electric Circuits",
+      "day": 3,
+      "start": "09:00",
+      "end": "12:00"
+    },
+    {
+      "subject": "Programming",
+      "day": 0,
+      "start": "12:00",
+      "end": "14:00"
+    },
+    {
+      "subject": "Programming",
+      "day": 2,
+      "start": "12:00",
+      "end": "14:00"
+    },
+    {
+      "subject": "Artificial Intelligence",
+      "day": 1,
+      "start": "13:00",
+      "end": "15:00"
+    },
+    {
+      "subject": "Artificial Intelligence",
+      "day": 3,
+      "start": "13:00",
+      "end": "15:00"
+    },
+    {
+      "subject": "Probability",
+      "day": 4,
+      "start": "12:00",
+      "end": "15:00"
+    }
+  ],
+  "rules": [
+    {
+      "activity": "Sleep",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "start": "23:00",
+      "end": "07:00"
+    },
+    {
+      "activity": "Breakfast",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "start": "07:00",
+      "end": "08:00"
+    },
+    {
+      "activity": "Lunch",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "start": "15:00",
+      "end": "16:00"
+    },
+    {
+      "activity": "Dinner",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "start": "21:00",
+      "end": "22:00"
+    },
+    {
+      "activity": "Commute",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "start": "08:00",
+      "end": "09:00"
+    },
+    {
+      "activity": "Commute",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "start": "16:00",
+      "end": "17:00"
+    },
+    {
+      "activity": "Soccer",
+      "days": [
+        1,
+        3
+      ],
+      "start": "18:00",
+      "end": "20:00"
+    },
+    {
+      "activity": "English class",
+      "days": [
+        5
+      ],
+      "start": "10:00",
+      "end": "13:00"
+    }
+  ],
+  "tasks": [
+    {
+      "name": "Lab 3 report",
+      "subject": "Electric Circuits",
+      "due": "2026-11-24 23:59",
+      "hours": 4,
+      "weight": 0.1,
+      "difficulty": 0.6
+    },
+    {
+      "name": "Problem set 4",
+      "subject": "Mathematics",
+      "due": "2026-11-25 23:59",
+      "hours": 3,
+      "weight": 0.05,
+      "difficulty": 0.7
+    },
+    {
+      "name": "AVL trees homework",
+      "subject": "Programming",
+      "due": "2026-11-26 09:00",
+      "hours": 3,
+      "weight": 0.05,
+      "difficulty": 0.5
+    },
+    {
+      "name": "Agents lab 2",
+      "subject": "Artificial Intelligence",
+      "due": "2026-11-26 13:00",
+      "hours": 5,
+      "weight": 0.15,
+      "difficulty": 0.6
+    },
+    {
+      "name": "Bayes exercises",
+      "subject": "Probability",
+      "due": "2026-11-27 12:00",
+      "hours": 2,
+      "weight": 0.05,
+      "difficulty": 0.4
+    },
+    {
+      "name": "Organizer project",
+      "subject": "Artificial Intelligence",
+      "due": "2026-12-04 23:59",
+      "hours": 12,
+      "weight": 0.3,
+      "difficulty": 0.8
+    }
+  ],
+  "events": []
+}
